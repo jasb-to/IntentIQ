@@ -8,23 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
-import {
-  Users,
-  Shield,
-  Settings,
-  AlertTriangle,
-  TestTube,
-  Activity,
-  CreditCard,
-  TrendingUp,
-  FileText,
-  Bell,
-  Database,
-} from "lucide-react"
+import { Users, Shield, Settings, AlertTriangle, TestTube, Activity } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
-
-// Force dynamic rendering
-export const dynamic = "force-dynamic"
 
 interface AdminStats {
   totalUsers: number
@@ -35,10 +20,6 @@ interface AdminStats {
   totalAlerts: number
   criticalAlerts: number
   systemHealth: string
-  monthlyRevenue: number
-  conversionRate: number
-  churnRate: number
-  avgRevenuePerUser: number
 }
 
 export default function AdminDashboard() {
@@ -52,10 +33,6 @@ export default function AdminDashboard() {
     totalAlerts: 0,
     criticalAlerts: 0,
     systemHealth: "operational",
-    monthlyRevenue: 0,
-    conversionRate: 0,
-    churnRate: 0,
-    avgRevenuePerUser: 0,
   })
   const [loading, setLoading] = useState(true)
   const [setupNeeded, setSetupNeeded] = useState(false)
@@ -113,10 +90,6 @@ export default function AdminDashboard() {
         totalAlerts: alerts?.length || 0,
         criticalAlerts,
         systemHealth: "operational",
-        monthlyRevenue: 12000,
-        conversionRate: 15,
-        churnRate: 5,
-        avgRevenuePerUser: 120,
       })
 
       setSetupNeeded(false)
@@ -202,7 +175,7 @@ export default function AdminDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: "jaspalbilkhu@gmail.com",
-          password: "IntentIQ2024!Admin#Secure$Pass",
+          password: "ShadowStack2024!Admin#Secure",
         }),
       })
 
@@ -364,28 +337,6 @@ export default function AdminDashboard() {
             <p className="text-xs text-muted-foreground">{stats.totalAlerts} total alerts</p>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">£{stats.monthlyRevenue}</div>
-            <p className="text-xs text-muted-foreground">£{stats.avgRevenuePerUser} ARPU</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Conversion Rate</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.conversionRate}%</div>
-            <p className="text-xs text-muted-foreground">{stats.churnRate}% churn rate</p>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Quick Actions */}
@@ -419,46 +370,6 @@ export default function AdminDashboard() {
             >
               <Settings className="mr-2 h-4 w-4" />
               System Settings
-            </Button>
-            <Button
-              className="w-full justify-start"
-              variant="outline"
-              onClick={() => (window.location.href = "/admin/billing")}
-            >
-              <CreditCard className="mr-2 h-4 w-4" />
-              Billing Management
-            </Button>
-            <Button
-              className="w-full justify-start"
-              variant="outline"
-              onClick={() => (window.location.href = "/admin/content")}
-            >
-              <FileText className="mr-2 h-4 w-4" />
-              Content Management
-            </Button>
-            <Button
-              className="w-full justify-start"
-              variant="outline"
-              onClick={() => (window.location.href = "/admin/notifications")}
-            >
-              <Bell className="mr-2 h-4 w-4" />
-              Notifications
-            </Button>
-            <Button
-              className="w-full justify-start"
-              variant="outline"
-              onClick={() => (window.location.href = "/admin/audit")}
-            >
-              <Shield className="mr-2 h-4 w-4" />
-              Audit Logs
-            </Button>
-            <Button
-              className="w-full justify-start"
-              variant="outline"
-              onClick={() => (window.location.href = "/admin/backup")}
-            >
-              <Database className="mr-2 h-4 w-4" />
-              Backup & Restore
             </Button>
           </CardContent>
         </Card>
