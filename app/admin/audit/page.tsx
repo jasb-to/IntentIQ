@@ -327,7 +327,7 @@ export default function AuditLogs() {
                     <TableHead>Severity</TableHead>
                     <TableHead>IP Address</TableHead>
                     <TableHead>Details</TableHead>
-                  </TableHeader>
+                  </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredLogs.map((log) => (
