@@ -1,9 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
-  swcMinify: true,
   experimental: {
-    serverComponentsExternalPackages: [],
+    serverComponentsExternalPackages: ["@supabase/supabase-js"],
   },
   eslint: {
     ignoreDuringBuilds: true,
@@ -12,16 +10,31 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: {
-    domains: ["ufmysxronjaohovgoecc.supabase.co"],
     unoptimized: true,
+    domains: ["placeholder.svg"],
   },
-  webpack: (config, { isServer }) => {
-    // Ignore specific modules that might cause issues
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      "@clerk/nextjs": false,
-    }
-    return config
+  // Force dynamic rendering for pages that use auth
+  async headers() {
+    return [
+      {
+        source: "/admin/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-cache, no-store, must-revalidate",
+          },
+        ],
+      },
+      {
+        source: "/dashboard/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-cache, no-store, must-revalidate",
+          },
+        ],
+      },
+    ]
   },
 }
 

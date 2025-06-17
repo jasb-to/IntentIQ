@@ -90,7 +90,7 @@ export default function SignInPage() {
     setIsLoading(true)
     try {
       console.log("🎭 Demo login attempt")
-      await signIn("demo@shadowstack.com", "demo12345")
+      await signIn("demo@intentiq.com", "demo12345")
 
       toast({
         title: "Welcome to the demo!",
@@ -149,7 +149,7 @@ export default function SignInPage() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="demo@shadowstack.com"
+                  placeholder="demo@intentiq.com"
                   onChange={handleChange}
                   value={formData.email}
                   required

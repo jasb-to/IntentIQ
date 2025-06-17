@@ -66,7 +66,7 @@ export default function SignUpPage() {
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl font-bold">Create an account</CardTitle>
-            <CardDescription>Enter your information to get started with ShadowStack</CardDescription>
+            <CardDescription>Enter your information to get started with IntentIQ</CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
