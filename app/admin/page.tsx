@@ -23,6 +23,9 @@ import {
 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
+// Force dynamic rendering
+export const dynamic = "force-dynamic"
+
 interface AdminStats {
   totalUsers: number
   activeUsers: number
@@ -199,7 +202,7 @@ export default function AdminDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: "jaspalbilkhu@gmail.com",
-          password: "ShadowStack2024!Admin#Secure",
+          password: "IntentIQ2024!Admin#Secure$Pass",
         }),
       })
 
