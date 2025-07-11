@@ -1,146 +1,132 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
-
-export const dynamic = "force-dynamic"
+import { createServerClient } from "@/lib/supabase"
+import { headers } from "next/headers"
 
 export async function GET(request: NextRequest) {
   try {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const headersList = headers()
+    const authorization = headersList.get("authorization")
 
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const supabase = createServerClient()
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser(authorization.replace("Bearer ", ""))
+
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    console.log(`⚙️ Fetching settings for user ${user.id}`)
+    const { data: settings, error } = await supabase.from("user_settings").select("*").eq("user_id", user.id).single()
 
-    // Fetch user profile and settings
-    const [profileResult, settingsResult] = await Promise.all([
-      supabase.from("user_profiles").select("*").eq("id", user.id).single(),
+    if (error && error.code !== "PGRST116") {
+      // Not found error
+      throw error
+    }
 
-      supabase.from("user_settings").select("*").eq("user_id", user.id).single(),
-    ])
-
-    const profile = profileResult.data
-    const settings = settingsResult.data
+    // Return default settings if none exist
+    const defaultSettings = {
+      user_id: user.id,
+      email_notifications: true,
+      slack_webhook_url: null,
+      monitoring_frequency: 60,
+      max_leads_per_search: 50,
+      platforms: ["reddit", "twitter"],
+      min_intent_score: "MEDIUM",
+      auto_save_high_intent: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
 
     return NextResponse.json({
-      profile: profile || {
-        id: user.id,
-        email: user.email,
-        full_name: null,
-        company_name: null,
-        subscription_tier: "free",
-        subscription_status: "active",
-      },
-      settings: settings || {
-        email_notifications: true,
-        slack_webhook_url: null,
-        monitoring_frequency: 60,
-        max_leads_per_search: 50,
-        platforms: ["reddit", "twitter"],
-      },
+      success: true,
+      settings: settings || defaultSettings,
     })
-  } catch (error: any) {
-    console.error("❌ Error fetching settings:", error)
+  } catch (error) {
+    console.error("Get settings error:", error)
     return NextResponse.json(
       {
-        error: "Failed to fetch settings",
-        details: error.message,
+        error: "Internal server error",
       },
       { status: 500 },
     )
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function PUT(request: NextRequest) {
   try {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const headersList = headers()
+    const authorization = headersList.get("authorization")
 
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const supabase = createServerClient()
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser(authorization.replace("Bearer ", ""))
+
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const body = await request.json()
-    const { type, data: updateData } = body
+    const {
+      email_notifications,
+      slack_webhook_url,
+      monitoring_frequency,
+      max_leads_per_search,
+      platforms,
+      min_intent_score,
+      auto_save_high_intent,
+    } = body
 
-    if (!type || !updateData) {
-      return NextResponse.json(
+    const updateData: any = {
+      user_id: user.id,
+      updated_at: new Date().toISOString(),
+    }
+
+    if (email_notifications !== undefined) updateData.email_notifications = email_notifications
+    if (slack_webhook_url !== undefined) updateData.slack_webhook_url = slack_webhook_url
+    if (monitoring_frequency !== undefined) updateData.monitoring_frequency = monitoring_frequency
+    if (max_leads_per_search !== undefined) updateData.max_leads_per_search = max_leads_per_search
+    if (platforms !== undefined) updateData.platforms = platforms
+    if (min_intent_score !== undefined) updateData.min_intent_score = min_intent_score
+    if (auto_save_high_intent !== undefined) updateData.auto_save_high_intent = auto_save_high_intent
+
+    const { data: updatedSettings, error } = await supabase
+      .from("user_settings")
+      .upsert(
         {
-          error: "type and data are required",
+          ...updateData,
+          created_at: new Date().toISOString(),
         },
-        { status: 400 },
+        {
+          onConflict: "user_id",
+        },
       )
+      .select()
+      .single()
+
+    if (error) {
+      throw error
     }
 
-    console.log(`⚙️ Updating ${type} for user ${user.id}`)
-
-    if (type === "profile") {
-      // Update user profile
-      const { data, error } = await supabase
-        .from("user_profiles")
-        .upsert([
-          {
-            id: user.id,
-            email: user.email,
-            ...updateData,
-          },
-        ])
-        .select()
-        .single()
-
-      if (error) {
-        console.error("Error updating profile:", error)
-        throw error
-      }
-
-      return NextResponse.json({
-        profile: data,
-        message: "Profile updated successfully",
-      })
-    }
-
-    if (type === "settings") {
-      // Update user settings
-      const { data, error } = await supabase
-        .from("user_settings")
-        .upsert([
-          {
-            user_id: user.id,
-            ...updateData,
-          },
-        ])
-        .select()
-        .single()
-
-      if (error) {
-        console.error("Error updating settings:", error)
-        throw error
-      }
-
-      return NextResponse.json({
-        settings: data,
-        message: "Settings updated successfully",
-      })
-    }
-
-    return NextResponse.json({ error: "Invalid type" }, { status: 400 })
-  } catch (error: any) {
-    console.error("❌ Error updating settings:", error)
+    return NextResponse.json({
+      success: true,
+      settings: updatedSettings,
+    })
+  } catch (error) {
+    console.error("Update settings error:", error)
     return NextResponse.json(
       {
-        error: "Failed to update settings",
-        details: error.message,
+        error: "Internal server error",
       },
       { status: 500 },
     )

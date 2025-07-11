@@ -1,147 +1,129 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
-
-export const dynamic = "force-dynamic"
+import { createServerClient } from "@/lib/supabase"
+import { headers } from "next/headers"
 
 export async function GET(request: NextRequest) {
   try {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const headersList = headers()
+    const authorization = headersList.get("authorization")
 
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const supabase = createServerClient()
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser(authorization.replace("Bearer ", ""))
+
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { searchParams } = new URL(request.url)
-    const timeframe = searchParams.get("timeframe") || "7d" // 7d, 30d, 90d
+    const url = new URL(request.url)
+    const days = Number.parseInt(url.searchParams.get("days") || "30")
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - days)
 
-    // Calculate date range
-    const now = new Date()
-    const daysBack = timeframe === "30d" ? 30 : timeframe === "90d" ? 90 : 7
-    const startDate = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000)
+    // Get search analytics
+    const { data: searches } = await supabase
+      .from("lead_searches")
+      .select("*")
+      .eq("user_id", user.id)
+      .gte("created_at", startDate.toISOString())
 
-    console.log(`📊 Fetching analytics for user ${user.id} (${timeframe})`)
+    // Get saved leads analytics
+    const { data: savedLeads } = await supabase
+      .from("saved_leads")
+      .select("*")
+      .eq("user_id", user.id)
+      .gte("created_at", startDate.toISOString())
 
-    // Fetch real data from database
-    const [searchesResult, savedLeadsResult, keywordsResult] = await Promise.all([
-      // Lead searches
-      supabase
-        .from("lead_searches")
-        .select("*")
-        .eq("user_id", user.id)
-        .gte("created_at", startDate.toISOString())
-        .order("created_at", { ascending: false }),
-
-      // Saved leads
-      supabase
-        .from("saved_leads")
-        .select("*")
-        .eq("user_id", user.id)
-        .gte("created_at", startDate.toISOString()),
-
-      // User keywords
-      supabase
-        .from("user_keywords")
-        .select("keyword")
-        .eq("user_id", user.id)
-        .eq("is_active", true),
-    ])
-
-    const searches = searchesResult.data || []
-    const savedLeads = savedLeadsResult.data || []
-    const keywords = keywordsResult.data || []
-
-    // Calculate analytics
-    const totalSearches = searches.length
-    const totalLeads = searches.reduce((sum, search) => sum + (search.results_count || 0), 0)
-    const highIntentLeads = searches.reduce((sum, search) => sum + (search.high_intent_count || 0), 0)
-    const mediumIntentLeads = searches.reduce((sum, search) => sum + (search.medium_intent_count || 0), 0)
-    const lowIntentLeads = searches.reduce((sum, search) => sum + (search.low_intent_count || 0), 0)
-    const contactedLeads = savedLeads.filter((lead) => lead.is_contacted).length
-    const conversionRate = totalLeads > 0 ? (contactedLeads / totalLeads) * 100 : 0
-
-    // Calculate keyword frequency
-    const keywordFrequency = new Map()
-    searches.forEach((search) => {
-      if (search.keywords) {
-        search.keywords.forEach((keyword: string) => {
-          keywordFrequency.set(keyword, (keywordFrequency.get(keyword) || 0) + 1)
-        })
-      }
-    })
-
-    const topKeywords = Array.from(keywordFrequency.entries())
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 10)
-      .map(([keyword, count]) => ({ keyword, count }))
-
-    // Calculate platform breakdown
-    const platformBreakdown = new Map()
-    searches.forEach((search) => {
-      if (search.platforms) {
-        search.platforms.forEach((platform: string) => {
-          platformBreakdown.set(platform, (platformBreakdown.get(platform) || 0) + 1)
-        })
-      }
-    })
-
-    // Generate daily stats
+    // Calculate daily stats
     const dailyStats = []
-    for (let i = 0; i < daysBack; i++) {
-      const date = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000)
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date()
+      date.setDate(date.getDate() - i)
       const dateStr = date.toISOString().split("T")[0]
 
-      const daySearches = searches.filter((search) => search.created_at.startsWith(dateStr))
+      const daySearches = searches?.filter((s) => s.created_at.startsWith(dateStr)) || []
 
-      const dayLeads = daySearches.reduce((sum, search) => sum + (search.results_count || 0), 0)
-      const dayHighIntent = daySearches.reduce((sum, search) => sum + (search.high_intent_count || 0), 0)
+      const daySavedLeads = savedLeads?.filter((l) => l.created_at.startsWith(dateStr)) || []
 
       dailyStats.push({
         date: dateStr,
         searches: daySearches.length,
-        leads: dayLeads,
-        highIntent: dayHighIntent,
+        leads_found: daySearches.reduce((sum, s) => sum + (s.results_count || 0), 0),
+        high_intent_leads: daySearches.reduce((sum, s) => sum + (s.high_intent_count || 0), 0),
+        leads_saved: daySavedLeads.length,
+        leads_contacted: daySavedLeads.filter((l) => l.is_contacted).length,
       })
     }
 
-    const analytics = {
-      totalSearches,
-      totalLeads,
-      highIntentLeads,
-      mediumIntentLeads,
-      lowIntentLeads,
-      savedLeads: savedLeads.length,
-      contactedLeads,
-      conversionRate: Math.round(conversionRate * 100) / 100,
-      topKeywords,
-      platformBreakdown: Object.fromEntries(platformBreakdown),
-      dailyStats,
-      averageLeadsPerSearch: totalSearches > 0 ? Math.round((totalLeads / totalSearches) * 100) / 100 : 0,
-      intentDistribution: {
-        high: Math.round((highIntentLeads / Math.max(totalLeads, 1)) * 100),
-        medium: Math.round((mediumIntentLeads / Math.max(totalLeads, 1)) * 100),
-        low: Math.round((lowIntentLeads / Math.max(totalLeads, 1)) * 100),
-      },
+    // Calculate totals
+    const totalSearches = searches?.length || 0
+    const totalLeadsFound = searches?.reduce((sum, s) => sum + (s.results_count || 0), 0) || 0
+    const totalHighIntentLeads = searches?.reduce((sum, s) => sum + (s.high_intent_count || 0), 0) || 0
+    const totalSavedLeads = savedLeads?.length || 0
+    const totalContactedLeads = savedLeads?.filter((l) => l.is_contacted).length || 0
+
+    // Platform breakdown
+    const platformStats =
+      searches?.reduce((acc: any, search) => {
+        search.platforms?.forEach((platform: string) => {
+          if (!acc[platform]) {
+            acc[platform] = { searches: 0, leads: 0 }
+          }
+          acc[platform].searches++
+          acc[platform].leads += search.results_count || 0
+        })
+        return acc
+      }, {}) || {}
+
+    // Intent score distribution
+    const intentDistribution = {
+      high: totalHighIntentLeads,
+      medium: searches?.reduce((sum, s) => sum + (s.medium_intent_count || 0), 0) || 0,
+      low: searches?.reduce((sum, s) => sum + (s.low_intent_count || 0), 0) || 0,
     }
 
-    console.log("✅ Analytics calculated successfully")
+    // Top keywords
+    const keywordCounts: { [key: string]: number } = {}
+    searches?.forEach((search) => {
+      search.keywords?.forEach((keyword: string) => {
+        keywordCounts[keyword] = (keywordCounts[keyword] || 0) + 1
+      })
+    })
+
+    const topKeywords = Object.entries(keywordCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([keyword, count]) => ({ keyword, count }))
 
     return NextResponse.json({
-      analytics,
-      timeframe,
-      generatedAt: new Date().toISOString(),
+      success: true,
+      analytics: {
+        summary: {
+          total_searches: totalSearches,
+          total_leads_found: totalLeadsFound,
+          total_high_intent_leads: totalHighIntentLeads,
+          total_saved_leads: totalSavedLeads,
+          total_contacted_leads: totalContactedLeads,
+          conversion_rate: totalLeadsFound > 0 ? ((totalContactedLeads / totalLeadsFound) * 100).toFixed(1) : "0",
+        },
+        daily_stats: dailyStats,
+        platform_breakdown: platformStats,
+        intent_distribution: intentDistribution,
+        top_keywords: topKeywords,
+        period_days: days,
+      },
     })
-  } catch (error: any) {
-    console.error("❌ Error fetching analytics:", error)
+  } catch (error) {
+    console.error("Analytics error:", error)
     return NextResponse.json(
       {
-        error: "Failed to fetch analytics",
-        details: error.message,
+        error: "Internal server error",
       },
       { status: 500 },
     )

@@ -1,23 +1,25 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
-
-export const dynamic = "force-dynamic"
+import { createServerClient } from "@/lib/supabase"
+import { headers } from "next/headers"
 
 export async function GET(request: NextRequest) {
   try {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const headersList = headers()
+    const authorization = headersList.get("authorization")
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
+    if (!authorization?.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    console.log("🔍 Fetching keywords for user:", user.id)
+    const supabase = createServerClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(authorization.replace("Bearer ", ""))
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
 
     const { data: keywords, error } = await supabase
       .from("user_keywords")
@@ -26,20 +28,18 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false })
 
     if (error) {
-      console.error("Error fetching keywords:", error)
       throw error
     }
 
     return NextResponse.json({
+      success: true,
       keywords: keywords || [],
-      total: keywords?.length || 0,
     })
-  } catch (error: any) {
-    console.error("❌ Error fetching keywords:", error)
+  } catch (error) {
+    console.error("Get keywords error:", error)
     return NextResponse.json(
       {
-        error: "Failed to fetch keywords",
-        details: error.message,
+        error: "Internal server error",
       },
       { status: 500 },
     )
@@ -48,67 +48,152 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const headersList = headers()
+    const authorization = headersList.get("authorization")
 
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const supabase = createServerClient()
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser(authorization.replace("Bearer ", ""))
+
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const body = await request.json()
-    const { keyword, category } = body
+    const { keyword, category = "general" } = body
 
-    if (!keyword) {
-      return NextResponse.json({ error: "keyword is required" }, { status: 400 })
+    if (!keyword || typeof keyword !== "string") {
+      return NextResponse.json({ error: "Keyword is required" }, { status: 400 })
     }
 
-    console.log("💾 Saving keyword for user:", user.id)
-
-    // Check if keyword already exists
-    const { data: existing } = await supabase
-      .from("user_keywords")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("keyword", keyword.trim())
+    // Check user's keyword limit
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("subscription_tier")
+      .eq("id", user.id)
       .single()
 
-    if (existing) {
-      return NextResponse.json({ error: "Keyword already exists" }, { status: 409 })
+    const limits = {
+      free: 10,
+      starter: 50,
+      pro: 200,
+      enterprise: 1000,
     }
 
-    // Save keyword
-    const { data, error } = await supabase
+    const userLimit = limits[profile?.subscription_tier as keyof typeof limits] || limits.free
+
+    const { count } = await supabase
       .from("user_keywords")
-      .insert([
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id)
+
+    if ((count || 0) >= userLimit) {
+      return NextResponse.json(
         {
-          user_id: user.id,
-          keyword: keyword.trim(),
-          category: category || "general",
-          is_active: true,
+          error: `Keyword limit reached. Limit: ${userLimit}`,
         },
-      ])
+        { status: 400 },
+      )
+    }
+
+    const { data: newKeyword, error } = await supabase
+      .from("user_keywords")
+      .insert({
+        user_id: user.id,
+        keyword: keyword.trim(),
+        category,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
       .select()
       .single()
 
     if (error) {
-      console.error("Error saving keyword:", error)
+      if (error.code === "23505") {
+        // Unique constraint violation
+        return NextResponse.json({ error: "Keyword already exists" }, { status: 400 })
+      }
       throw error
     }
 
     return NextResponse.json({
-      keyword: data,
-      message: "Keyword saved successfully",
+      success: true,
+      keyword: newKeyword,
     })
-  } catch (error: any) {
-    console.error("❌ Error saving keyword:", error)
+  } catch (error) {
+    console.error("Create keyword error:", error)
     return NextResponse.json(
       {
-        error: "Failed to save keyword",
-        details: error.message,
+        error: "Internal server error",
+      },
+      { status: 500 },
+    )
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const headersList = headers()
+    const authorization = headersList.get("authorization")
+
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const supabase = createServerClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(authorization.replace("Bearer ", ""))
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { id, keyword, category, is_active } = body
+
+    if (!id) {
+      return NextResponse.json({ error: "Keyword ID is required" }, { status: 400 })
+    }
+
+    const updateData: any = { updated_at: new Date().toISOString() }
+    if (keyword !== undefined) updateData.keyword = keyword.trim()
+    if (category !== undefined) updateData.category = category
+    if (is_active !== undefined) updateData.is_active = is_active
+
+    const { data: updatedKeyword, error } = await supabase
+      .from("user_keywords")
+      .update(updateData)
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .select()
+      .single()
+
+    if (error) {
+      throw error
+    }
+
+    if (!updatedKeyword) {
+      return NextResponse.json({ error: "Keyword not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      keyword: updatedKeyword,
+    })
+  } catch (error) {
+    console.error("Update keyword error:", error)
+    return NextResponse.json(
+      {
+        error: "Internal server error",
       },
       { status: 500 },
     )
@@ -117,42 +202,45 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const headersList = headers()
+    const authorization = headersList.get("authorization")
 
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const supabase = createServerClient()
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser(authorization.replace("Bearer ", ""))
+
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { searchParams } = new URL(request.url)
-    const keywordId = searchParams.get("id")
+    const url = new URL(request.url)
+    const id = url.searchParams.get("id")
 
-    if (!keywordId) {
-      return NextResponse.json({ error: "id is required" }, { status: 400 })
+    if (!id) {
+      return NextResponse.json({ error: "Keyword ID is required" }, { status: 400 })
     }
 
-    console.log("🗑️ Deleting keyword:", keywordId)
-
-    const { error } = await supabase.from("user_keywords").delete().eq("id", keywordId).eq("user_id", user.id)
+    const { error } = await supabase.from("user_keywords").delete().eq("id", id).eq("user_id", user.id)
 
     if (error) {
-      console.error("Error deleting keyword:", error)
       throw error
     }
 
     return NextResponse.json({
+      success: true,
       message: "Keyword deleted successfully",
     })
-  } catch (error: any) {
-    console.error("❌ Error deleting keyword:", error)
+  } catch (error) {
+    console.error("Delete keyword error:", error)
     return NextResponse.json(
       {
-        error: "Failed to delete keyword",
-        details: error.message,
+        error: "Internal server error",
       },
       { status: 500 },
     )

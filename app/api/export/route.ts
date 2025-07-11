@@ -1,73 +1,85 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
-
-export const dynamic = "force-dynamic"
+import { createServerClient } from "@/lib/supabase"
+import { headers } from "next/headers"
 
 export async function GET(request: NextRequest) {
   try {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const headersList = headers()
+    const authorization = headersList.get("authorization")
 
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const supabase = createServerClient()
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser(authorization.replace("Bearer ", ""))
+
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { searchParams } = new URL(request.url)
-    const format = searchParams.get("format") || "csv" // csv, json
-    const type = searchParams.get("type") || "saved_leads" // saved_leads, searches, keywords
+    const url = new URL(request.url)
+    const format = url.searchParams.get("format") || "csv"
+    const type = url.searchParams.get("type") || "leads"
+    const intent_score = url.searchParams.get("intent_score")
+    const days = Number.parseInt(url.searchParams.get("days") || "30")
 
-    console.log(`📤 Exporting ${type} as ${format} for user ${user.id}`)
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - days)
 
     let data: any[] = []
     let filename = ""
 
-    if (type === "saved_leads") {
-      const { data: leads, error } = await supabase
+    if (type === "leads") {
+      let query = supabase
         .from("saved_leads")
         .select("*")
         .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
+        .gte("created_at", startDate.toISOString())
 
-      if (error) throw error
+      if (intent_score) {
+        query = query.eq("intent_score", intent_score)
+      }
+
+      const { data: leads, error } = await query.order("created_at", { ascending: false })
+
+      if (error) {
+        throw error
+      }
+
       data = leads || []
-      filename = `intentiq-saved-leads-${new Date().toISOString().split("T")[0]}`
-    }
-
-    if (type === "searches") {
+      filename = `intentiq-leads-${new Date().toISOString().split("T")[0]}`
+    } else if (type === "searches") {
       const { data: searches, error } = await supabase
         .from("lead_searches")
         .select("*")
         .eq("user_id", user.id)
+        .gte("created_at", startDate.toISOString())
         .order("created_at", { ascending: false })
 
-      if (error) throw error
+      if (error) {
+        throw error
+      }
+
       data = searches || []
       filename = `intentiq-searches-${new Date().toISOString().split("T")[0]}`
     }
 
-    if (type === "keywords") {
-      const { data: keywords, error } = await supabase
-        .from("user_keywords")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-
-      if (error) throw error
-      data = keywords || []
-      filename = `intentiq-keywords-${new Date().toISOString().split("T")[0]}`
-    }
-
     if (format === "csv") {
+      // Convert to CSV
       if (data.length === 0) {
-        return new NextResponse("No data to export", { status: 404 })
+        return new Response("No data to export", {
+          status: 200,
+          headers: {
+            "Content-Type": "text/csv",
+            "Content-Disposition": `attachment; filename="${filename}.csv"`,
+          },
+        })
       }
 
-      // Convert to CSV
       const headers = Object.keys(data[0])
       const csvContent = [
         headers.join(","),
@@ -76,38 +88,35 @@ export async function GET(request: NextRequest) {
             .map((header) => {
               const value = row[header]
               if (value === null || value === undefined) return ""
-              if (typeof value === "object") return JSON.stringify(value)
-              if (typeof value === "string" && value.includes(",")) return `"${value}"`
-              return value
+              if (typeof value === "object") return JSON.stringify(value).replace(/"/g, '""')
+              return `"${String(value).replace(/"/g, '""')}"`
             })
             .join(","),
         ),
       ].join("\n")
 
-      return new NextResponse(csvContent, {
+      return new Response(csvContent, {
+        status: 200,
         headers: {
           "Content-Type": "text/csv",
           "Content-Disposition": `attachment; filename="${filename}.csv"`,
         },
       })
-    }
-
-    if (format === "json") {
-      return new NextResponse(JSON.stringify(data, null, 2), {
+    } else {
+      // Return JSON
+      return new Response(JSON.stringify(data, null, 2), {
+        status: 200,
         headers: {
           "Content-Type": "application/json",
           "Content-Disposition": `attachment; filename="${filename}.json"`,
         },
       })
     }
-
-    return NextResponse.json({ error: "Invalid format" }, { status: 400 })
-  } catch (error: any) {
-    console.error("❌ Error exporting data:", error)
+  } catch (error) {
+    console.error("Export error:", error)
     return NextResponse.json(
       {
-        error: "Failed to export data",
-        details: error.message,
+        error: "Internal server error",
       },
       { status: 500 },
     )

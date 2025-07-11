@@ -1,126 +1,131 @@
 import { type NextRequest, NextResponse } from "next/server"
-
-export const dynamic = "force-dynamic"
+import { createServerClient } from "@/lib/supabase"
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { webhook_url, leads, keywords, user_email } = body
+    const { user_id, webhook_url, test_message } = body
 
-    if (!webhook_url || !leads) {
+    if (!user_id || !webhook_url) {
       return NextResponse.json(
         {
-          error: "webhook_url and leads are required",
+          error: "User ID and webhook URL are required",
         },
         { status: 400 },
       )
     }
 
-    console.log(`📢 Sending Slack notification for ${leads.length} leads`)
-
-    const highIntentLeads = leads.filter((lead: any) => lead.intentScore === "HIGH")
-    const mediumIntentLeads = leads.filter((lead: any) => lead.intentScore === "MEDIUM")
-
-    const slackMessage = {
-      text: `🎯 IntentIQ: New Leads Found!`,
-      blocks: [
+    // Validate webhook URL format
+    if (!webhook_url.startsWith("https://hooks.slack.com/")) {
+      return NextResponse.json(
         {
-          type: "header",
-          text: {
-            type: "plain_text",
-            text: "🎯 New High-Intent Leads Discovered!",
-          },
+          error: "Invalid Slack webhook URL format",
         },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `Found *${leads.length} new leads* matching keywords: \`${keywords.join(", ")}\``,
-          },
-        },
-        {
-          type: "section",
-          fields: [
-            {
-              type: "mrkdwn",
-              text: `*🔥 High Intent:* ${highIntentLeads.length}`,
-            },
-            {
-              type: "mrkdwn",
-              text: `*⚡ Medium Intent:* ${mediumIntentLeads.length}`,
-            },
-          ],
-        },
-      ],
+        { status: 400 },
+      )
     }
 
-    // Add top high-intent leads to the message
-    if (highIntentLeads.length > 0) {
-      slackMessage.blocks.push({
-        type: "divider",
-      })
+    const supabase = createServerClient()
 
-      slackMessage.blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "*🔥 Top High-Intent Leads:*",
-        },
-      })
-
-      highIntentLeads.slice(0, 3).forEach((lead: any) => {
-        slackMessage.blocks.push({
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*${lead.platform}* - ${lead.author}\n${lead.content.substring(0, 150)}...\n<${lead.url}|View Post>`,
-          },
-        })
-      })
-    }
-
-    // Add action button
-    slackMessage.blocks.push({
-      type: "actions",
-      elements: [
-        {
-          type: "button",
-          text: {
-            type: "plain_text",
-            text: "View All Leads",
-          },
-          url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
-          style: "primary",
-        },
-      ],
-    })
-
-    // Send to Slack
-    const slackResponse = await fetch(webhook_url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    // Update user settings with webhook URL
+    const { error: updateError } = await supabase.from("user_settings").upsert(
+      {
+        user_id,
+        slack_webhook_url: webhook_url,
+        updated_at: new Date().toISOString(),
       },
-      body: JSON.stringify(slackMessage),
-    })
+      {
+        onConflict: "user_id",
+      },
+    )
 
-    if (!slackResponse.ok) {
-      throw new Error(`Slack webhook failed: ${slackResponse.statusText}`)
+    if (updateError) {
+      throw updateError
     }
 
-    console.log("✅ Slack notification sent successfully")
+    // Send test message if requested
+    if (test_message) {
+      try {
+        const response = await fetch(webhook_url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: "🎯 IntentIQ Slack integration is working! You'll receive lead notifications here.",
+            username: "IntentIQ",
+            icon_emoji: ":dart:",
+          }),
+        })
+
+        if (!response.ok) {
+          return NextResponse.json(
+            {
+              error: "Failed to send test message to Slack",
+            },
+            { status: 400 },
+          )
+        }
+      } catch (slackError) {
+        return NextResponse.json(
+          {
+            error: "Failed to connect to Slack webhook",
+          },
+          { status: 400 },
+        )
+      }
+    }
 
     return NextResponse.json({
-      message: "Slack notification sent successfully",
-      leads_count: leads.length,
-      high_intent_count: highIntentLeads.length,
+      success: true,
+      message: "Slack webhook configured successfully",
     })
-  } catch (error: any) {
-    console.error("❌ Error sending Slack notification:", error)
+  } catch (error) {
+    console.error("Slack webhook error:", error)
     return NextResponse.json(
       {
-        error: "Failed to send Slack notification",
-        details: error.message,
+        error: "Internal server error",
+      },
+      { status: 500 },
+    )
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const url = new URL(request.url)
+    const user_id = url.searchParams.get("user_id")
+
+    if (!user_id) {
+      return NextResponse.json(
+        {
+          error: "User ID is required",
+        },
+        { status: 400 },
+      )
+    }
+
+    const supabase = createServerClient()
+
+    const { error } = await supabase
+      .from("user_settings")
+      .update({
+        slack_webhook_url: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", user_id)
+
+    if (error) {
+      throw error
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Slack webhook removed successfully",
+    })
+  } catch (error) {
+    console.error("Remove Slack webhook error:", error)
+    return NextResponse.json(
+      {
+        error: "Internal server error",
       },
       { status: 500 },
     )

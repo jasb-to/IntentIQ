@@ -1,59 +1,62 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
-
-export const dynamic = "force-dynamic"
+import { createServerClient } from "@/lib/supabase"
+import { headers } from "next/headers"
 
 export async function GET(request: NextRequest) {
   try {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const headersList = headers()
+    const authorization = headersList.get("authorization")
 
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const supabase = createServerClient()
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser(authorization.replace("Bearer ", ""))
+
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { searchParams } = new URL(request.url)
-    const filter = searchParams.get("filter") || "all" // all, contacted, uncontacted
-    const limit = Number.parseInt(searchParams.get("limit") || "50")
+    const url = new URL(request.url)
+    const limit = Number.parseInt(url.searchParams.get("limit") || "20")
+    const offset = Number.parseInt(url.searchParams.get("offset") || "0")
+    const intent_score = url.searchParams.get("intent_score")
+    const is_contacted = url.searchParams.get("is_contacted")
+    const platform = url.searchParams.get("platform")
 
-    console.log(`📋 Fetching saved leads for user ${user.id} (filter: ${filter})`)
+    let query = supabase.from("saved_leads").select("*").eq("user_id", user.id)
 
-    let query = supabase
-      .from("saved_leads")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(limit)
-
-    if (filter === "contacted") {
-      query = query.eq("is_contacted", true)
-    } else if (filter === "uncontacted") {
-      query = query.eq("is_contacted", false)
+    if (intent_score) {
+      query = query.eq("intent_score", intent_score)
+    }
+    if (is_contacted !== null) {
+      query = query.eq("is_contacted", is_contacted === "true")
+    }
+    if (platform) {
+      query = query.eq("platform", platform)
     }
 
-    const { data: savedLeads, error } = await query
+    const { data: leads, error } = await query
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1)
 
     if (error) {
-      console.error("Error fetching saved leads:", error)
       throw error
     }
 
     return NextResponse.json({
-      leads: savedLeads || [],
-      total: savedLeads?.length || 0,
-      filter,
+      success: true,
+      leads: leads || [],
     })
-  } catch (error: any) {
-    console.error("❌ Error fetching saved leads:", error)
+  } catch (error) {
+    console.error("Get saved leads error:", error)
     return NextResponse.json(
       {
-        error: "Failed to fetch saved leads",
-        details: error.message,
+        error: "Internal server error",
       },
       { status: 500 },
     )
@@ -62,34 +65,69 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const headersList = headers()
+    const authorization = headersList.get("authorization")
 
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const supabase = createServerClient()
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser(authorization.replace("Bearer ", ""))
+
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const body = await request.json()
-    const { platform, external_id, content, author, url, intent_score, keywords, metadata, notes } = body
+    const { platform, external_id, content, author, url, intent_score, confidence, keywords, signals, metadata, tags } =
+      body
 
-    if (!platform || !external_id || !content) {
+    if (!platform || !external_id || !content || !intent_score) {
       return NextResponse.json(
         {
-          error: "platform, external_id, and content are required",
+          error: "Platform, external_id, content, and intent_score are required",
         },
         { status: 400 },
       )
     }
 
-    console.log(`💾 Saving lead for user ${user.id}:`, external_id)
+    // Check user's saved leads limit
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("subscription_tier")
+      .eq("id", user.id)
+      .single()
 
-    const { data, error } = await supabase
+    const limits = {
+      free: 50,
+      starter: 500,
+      pro: 2000,
+      enterprise: 10000,
+    }
+
+    const userLimit = limits[profile?.subscription_tier as keyof typeof limits] || limits.free
+
+    const { count } = await supabase
       .from("saved_leads")
-      .upsert([
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id)
+
+    if ((count || 0) >= userLimit) {
+      return NextResponse.json(
+        {
+          error: `Saved leads limit reached. Limit: ${userLimit}`,
+        },
+        { status: 400 },
+      )
+    }
+
+    const { data: savedLead, error } = await supabase
+      .from("saved_leads")
+      .upsert(
         {
           user_id: user.id,
           platform,
@@ -98,70 +136,78 @@ export async function POST(request: NextRequest) {
           author,
           url,
           intent_score,
+          confidence,
           keywords,
+          signals,
           metadata,
-          notes,
+          tags,
           is_contacted: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         },
-      ])
+        {
+          onConflict: "user_id,external_id",
+        },
+      )
       .select()
       .single()
 
     if (error) {
-      console.error("Error saving lead:", error)
       throw error
     }
 
     return NextResponse.json({
-      lead: data,
-      message: "Lead saved successfully",
+      success: true,
+      lead: savedLead,
     })
-  } catch (error: any) {
-    console.error("❌ Error saving lead:", error)
+  } catch (error) {
+    console.error("Save lead error:", error)
     return NextResponse.json(
       {
-        error: "Failed to save lead",
-        details: error.message,
+        error: "Internal server error",
       },
       { status: 500 },
     )
   }
 }
 
-export async function PATCH(request: NextRequest) {
+export async function PUT(request: NextRequest) {
   try {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const headersList = headers()
+    const authorization = headersList.get("authorization")
 
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const supabase = createServerClient()
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser(authorization.replace("Bearer ", ""))
+
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const body = await request.json()
-    const { id, is_contacted, notes } = body
+    const { id, is_contacted, notes, tags } = body
 
     if (!id) {
-      return NextResponse.json({ error: "id is required" }, { status: 400 })
+      return NextResponse.json({ error: "Lead ID is required" }, { status: 400 })
     }
 
-    console.log(`📝 Updating lead ${id} for user ${user.id}`)
-
-    const updateData: any = {}
-    if (typeof is_contacted === "boolean") {
+    const updateData: any = { updated_at: new Date().toISOString() }
+    if (is_contacted !== undefined) {
       updateData.is_contacted = is_contacted
       if (is_contacted) {
         updateData.contacted_at = new Date().toISOString()
       }
     }
-    if (notes !== undefined) {
-      updateData.notes = notes
-    }
+    if (notes !== undefined) updateData.notes = notes
+    if (tags !== undefined) updateData.tags = tags
 
-    const { data, error } = await supabase
+    const { data: updatedLead, error } = await supabase
       .from("saved_leads")
       .update(updateData)
       .eq("id", id)
@@ -170,20 +216,22 @@ export async function PATCH(request: NextRequest) {
       .single()
 
     if (error) {
-      console.error("Error updating lead:", error)
       throw error
     }
 
+    if (!updatedLead) {
+      return NextResponse.json({ error: "Lead not found" }, { status: 404 })
+    }
+
     return NextResponse.json({
-      lead: data,
-      message: "Lead updated successfully",
+      success: true,
+      lead: updatedLead,
     })
-  } catch (error: any) {
-    console.error("❌ Error updating lead:", error)
+  } catch (error) {
+    console.error("Update lead error:", error)
     return NextResponse.json(
       {
-        error: "Failed to update lead",
-        details: error.message,
+        error: "Internal server error",
       },
       { status: 500 },
     )
@@ -192,42 +240,45 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const headersList = headers()
+    const authorization = headersList.get("authorization")
 
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const supabase = createServerClient()
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser(authorization.replace("Bearer ", ""))
+
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { searchParams } = new URL(request.url)
-    const leadId = searchParams.get("id")
+    const url = new URL(request.url)
+    const id = url.searchParams.get("id")
 
-    if (!leadId) {
-      return NextResponse.json({ error: "id is required" }, { status: 400 })
+    if (!id) {
+      return NextResponse.json({ error: "Lead ID is required" }, { status: 400 })
     }
 
-    console.log(`🗑️ Deleting lead ${leadId} for user ${user.id}`)
-
-    const { error } = await supabase.from("saved_leads").delete().eq("id", leadId).eq("user_id", user.id)
+    const { error } = await supabase.from("saved_leads").delete().eq("id", id).eq("user_id", user.id)
 
     if (error) {
-      console.error("Error deleting lead:", error)
       throw error
     }
 
     return NextResponse.json({
+      success: true,
       message: "Lead deleted successfully",
     })
-  } catch (error: any) {
-    console.error("❌ Error deleting lead:", error)
+  } catch (error) {
+    console.error("Delete lead error:", error)
     return NextResponse.json(
       {
-        error: "Failed to delete lead",
-        details: error.message,
+        error: "Internal server error",
       },
       { status: 500 },
     )

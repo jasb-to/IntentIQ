@@ -1,387 +1,294 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
+import { createServerClient } from "@/lib/supabase"
+import { headers } from "next/headers"
 
-export const dynamic = "force-dynamic"
+// Mock AI intent analysis - replace with actual AI service
+function analyzeIntent(content: string, keywords: string[]) {
+  const contentLower = content.toLowerCase()
+  const keywordMatches = keywords.filter((keyword) => contentLower.includes(keyword.toLowerCase()))
 
-// Enhanced Reddit/Twitter API simulation with more realistic data
-async function fetchSocialMediaPosts(keywords: string[], platforms: string[] = ["reddit", "twitter"]) {
-  const redditPosts = [
+  // Simple scoring based on keyword matches and buying signals
+  const buyingSignals = [
+    "looking for",
+    "need help",
+    "recommendations",
+    "best tool",
+    "pricing",
+    "cost",
+    "budget",
+    "buy",
+    "purchase",
+    "solution",
+  ]
+
+  const signalMatches = buyingSignals.filter((signal) => contentLower.includes(signal))
+
+  let score: "HIGH" | "MEDIUM" | "LOW" = "LOW"
+  let confidence = 0.3
+
+  if (keywordMatches.length >= 2 && signalMatches.length >= 2) {
+    score = "HIGH"
+    confidence = 0.85
+  } else if (keywordMatches.length >= 1 && signalMatches.length >= 1) {
+    score = "MEDIUM"
+    confidence = 0.65
+  }
+
+  return {
+    intent_score: score,
+    confidence,
+    keywords: keywordMatches,
+    signals: signalMatches,
+  }
+}
+
+// Mock social media data - replace with actual API integrations
+function mockSocialMediaSearch(keywords: string[], platforms: string[]) {
+  const mockPosts = [
     {
       id: "reddit_1",
-      platform: "Reddit",
-      content:
-        "Looking for a good CRM solution for my startup. Any recommendations? We need something affordable but powerful for a team of 15.",
+      platform: "reddit",
+      content: "Looking for the best lead generation tool for my SaaS startup. Any recommendations?",
       author: "startup_founder_23",
-      subreddit: "r/entrepreneur",
-      url: "https://reddit.com/r/entrepreneur/comments/abc123",
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-      upvotes: 15,
-      comments: 8,
-      engagement_score: 23,
+      url: "https://reddit.com/r/entrepreneur/post1",
+      created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    },
+    {
+      id: "twitter_1",
+      platform: "twitter",
+      content: "Need help finding qualified leads for our B2B software. Current tools are too expensive.",
+      author: "saas_marketer",
+      url: "https://twitter.com/saas_marketer/status/123",
+      created_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
     },
     {
       id: "reddit_2",
-      platform: "Reddit",
-      content:
-        "Just got funding! Time to invest in proper sales tools. What do you recommend for a B2B SaaS? Budget is around $10k/month.",
-      author: "tech_ceo",
-      subreddit: "r/startups",
-      url: "https://reddit.com/r/startups/comments/def456",
-      timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-      upvotes: 42,
-      comments: 18,
-      engagement_score: 60,
-    },
-    {
-      id: "reddit_3",
-      platform: "Reddit",
-      content:
-        "Our current lead generation process is manual and taking forever. Need to automate this ASAP. Any tool recommendations?",
-      author: "sales_manager_pro",
-      subreddit: "r/sales",
-      url: "https://reddit.com/r/sales/comments/ghi789",
-      timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
-      upvotes: 28,
-      comments: 12,
-      engagement_score: 40,
-    },
-    {
-      id: "reddit_4",
-      platform: "Reddit",
-      content: "Anyone using AI for prospecting? We're scaling fast and need better lead qualification tools.",
-      author: "growth_hacker_2024",
-      subreddit: "r/marketing",
-      url: "https://reddit.com/r/marketing/comments/jkl012",
-      timestamp: new Date(Date.now() - 18 * 60 * 60 * 1000).toISOString(),
-      upvotes: 35,
-      comments: 22,
-      engagement_score: 57,
+      platform: "reddit",
+      content: "What lead generation software do you use? Budget is around $100/month.",
+      author: "marketing_pro",
+      url: "https://reddit.com/r/marketing/post2",
+      created_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
     },
   ]
 
-  const twitterPosts = [
-    {
-      id: "twitter_1",
-      platform: "Twitter",
-      content:
-        "Our current email marketing tool is too expensive. Need alternatives that won't break the bank but still deliver results. Budget: $500/month max.",
-      author: "@marketing_pro",
-      url: "https://twitter.com/marketing_pro/status/123456",
-      timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-      likes: 23,
-      retweets: 5,
-      engagement_score: 28,
-    },
-    {
-      id: "twitter_2",
-      platform: "Twitter",
-      content:
-        "Anyone know a good lead generation tool? We're scaling fast and need to automate our prospecting. Currently doing everything manually 😅",
-      author: "@growth_hacker",
-      url: "https://twitter.com/growth_hacker/status/789012",
-      timestamp: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(),
-      likes: 31,
-      retweets: 12,
-      engagement_score: 43,
-    },
-    {
-      id: "twitter_3",
-      platform: "Twitter",
-      content:
-        "Just closed a $2M round! Time to invest in proper sales infrastructure. Looking for recommendations on CRM + automation stack.",
-      author: "@saas_founder",
-      url: "https://twitter.com/saas_founder/status/345678",
-      timestamp: new Date(Date.now() - 14 * 60 * 60 * 1000).toISOString(),
-      likes: 87,
-      retweets: 24,
-      engagement_score: 111,
-    },
-    {
-      id: "twitter_4",
-      platform: "Twitter",
-      content:
-        "Our sales team is drowning in manual tasks. Need a tool that can help with lead scoring and qualification. Any suggestions?",
-      author: "@sales_ops_lead",
-      url: "https://twitter.com/sales_ops_lead/status/901234",
-      timestamp: new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString(),
-      likes: 19,
-      retweets: 7,
-      engagement_score: 26,
-    },
-  ]
-
-  const allPosts = []
-  if (platforms.includes("reddit")) allPosts.push(...redditPosts)
-  if (platforms.includes("twitter")) allPosts.push(...twitterPosts)
-
-  // Filter posts based on keywords
-  const filteredPosts = allPosts.filter((post) =>
-    keywords.some((keyword) => post.content.toLowerCase().includes(keyword.toLowerCase())),
+  return mockPosts.filter(
+    (post) =>
+      platforms.includes(post.platform) &&
+      keywords.some((keyword) => post.content.toLowerCase().includes(keyword.toLowerCase())),
   )
-
-  return filteredPosts
 }
 
-// Enhanced AI-powered intent scoring with more sophisticated analysis
-async function analyzeIntent(content: string): Promise<{
-  score: "HIGH" | "MEDIUM" | "LOW"
-  confidence: number
-  signals: string[]
-}> {
-  const highIntentKeywords = [
-    "need",
-    "looking for",
-    "recommend",
-    "buy",
-    "purchase",
-    "invest",
-    "budget",
-    "price",
-    "cost",
-    "funding",
-    "closed round",
-    "just got",
-    "ready to",
-    "time to",
-  ]
-
-  const mediumIntentKeywords = [
-    "considering",
-    "thinking about",
-    "exploring",
-    "research",
-    "compare",
-    "alternative",
-    "suggestions",
-    "advice",
-    "help",
-    "anyone using",
-  ]
-
-  const urgencyKeywords = [
-    "ASAP",
-    "urgent",
-    "quickly",
-    "fast",
-    "immediately",
-    "now",
-    "drowning",
-    "manual",
-    "scaling",
-    "growing",
-  ]
-
-  const budgetKeywords = ["$", "budget", "cost", "price", "expensive", "affordable", "cheap", "investment"]
-
-  const contentLower = content.toLowerCase()
-
-  const highIntentMatches = highIntentKeywords.filter((keyword) => contentLower.includes(keyword))
-  const mediumIntentMatches = mediumIntentKeywords.filter((keyword) => contentLower.includes(keyword))
-  const urgencyMatches = urgencyKeywords.filter((keyword) => contentLower.includes(keyword))
-  const budgetMatches = budgetKeywords.filter((keyword) => contentLower.includes(keyword))
-
-  let score: "HIGH" | "MEDIUM" | "LOW" = "LOW"
-  let confidence = 0
-  const signals: string[] = []
-
-  // Calculate intent score
-  const highIntentScore = highIntentMatches.length * 3
-  const mediumIntentScore = mediumIntentMatches.length * 2
-  const urgencyScore = urgencyMatches.length * 2
-  const budgetScore = budgetMatches.length * 1.5
-
-  const totalScore = highIntentScore + mediumIntentScore + urgencyScore + budgetScore
-
-  if (totalScore >= 6 || highIntentMatches.length >= 2) {
-    score = "HIGH"
-    confidence = Math.min(90, 60 + totalScore * 5)
-  } else if (totalScore >= 3 || highIntentMatches.length >= 1 || mediumIntentMatches.length >= 2) {
-    score = "MEDIUM"
-    confidence = Math.min(75, 40 + totalScore * 7)
-  } else {
-    score = "LOW"
-    confidence = Math.min(50, 20 + totalScore * 10)
-  }
-
-  // Add signals
-  if (highIntentMatches.length > 0) signals.push(`High intent keywords: ${highIntentMatches.join(", ")}`)
-  if (urgencyMatches.length > 0) signals.push(`Urgency indicators: ${urgencyMatches.join(", ")}`)
-  if (budgetMatches.length > 0) signals.push(`Budget mentioned: ${budgetMatches.join(", ")}`)
-  if (mediumIntentMatches.length > 0) signals.push(`Research phase: ${mediumIntentMatches.join(", ")}`)
-
-  return { score, confidence, signals }
-}
-
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const headersList = headers()
+    const authorization = headersList.get("authorization")
 
-    // Get authenticated user
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const supabase = createServerClient()
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser(authorization.replace("Bearer ", ""))
+
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { searchParams } = new URL(request.url)
-    const keywordsParam = searchParams.get("keywords")
-    const keywords = keywordsParam
-      ? keywordsParam.split(",").map((k) => k.trim())
-      : ["CRM", "email marketing", "sales tools"]
-    const platforms = searchParams.get("platforms")?.split(",") || ["reddit", "twitter"]
-    const limit = Number.parseInt(searchParams.get("limit") || "20")
+    const body = await request.json()
+    const { keywords, platforms = ["reddit", "twitter"] } = body
 
-    console.log("🔍 Searching for leads:", { keywords, platforms, limit, userId: user.id })
+    if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+      return NextResponse.json({ error: "Keywords are required" }, { status: 400 })
+    }
 
-    // Fetch posts from social media
-    const posts = await fetchSocialMediaPosts(keywords, platforms)
+    // Check user's subscription limits
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("subscription_tier")
+      .eq("id", user.id)
+      .single()
 
-    // Analyze intent for each post
-    const leadsWithIntent = await Promise.all(
-      posts.map(async (post) => {
-        const intentAnalysis = await analyzeIntent(post.content)
-        return {
-          ...post,
-          intentScore: intentAnalysis.score,
-          confidence: intentAnalysis.confidence,
-          signals: intentAnalysis.signals,
-          keywords: keywords.filter((keyword) => post.content.toLowerCase().includes(keyword.toLowerCase())),
-          relevanceScore: Math.floor(Math.random() * 30) + 70, // Mock relevance score
-        }
-      }),
-    )
+    const limits = {
+      free: { max_keywords: 3, max_searches_per_day: 5 },
+      starter: { max_keywords: 10, max_searches_per_day: 25 },
+      pro: { max_keywords: 50, max_searches_per_day: 100 },
+      enterprise: { max_keywords: 200, max_searches_per_day: 500 },
+    }
 
-    // Sort by intent score, confidence, and engagement
-    const sortedLeads = leadsWithIntent.sort((a, b) => {
-      const intentOrder = { HIGH: 3, MEDIUM: 2, LOW: 1 }
+    const userLimits = limits[profile?.subscription_tier as keyof typeof limits] || limits.free
 
-      // Primary sort: intent score
-      if (intentOrder[a.intentScore] !== intentOrder[b.intentScore]) {
-        return intentOrder[b.intentScore] - intentOrder[a.intentScore]
+    if (keywords.length > userLimits.max_keywords) {
+      return NextResponse.json(
+        {
+          error: `Too many keywords. Limit: ${userLimits.max_keywords}`,
+        },
+        { status: 400 },
+      )
+    }
+
+    // Check daily search limit
+    const today = new Date().toISOString().split("T")[0]
+    const { count } = await supabase
+      .from("lead_searches")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .gte("created_at", `${today}T00:00:00.000Z`)
+
+    if ((count || 0) >= userLimits.max_searches_per_day) {
+      return NextResponse.json(
+        {
+          error: `Daily search limit reached. Limit: ${userLimits.max_searches_per_day}`,
+        },
+        { status: 429 },
+      )
+    }
+
+    const startTime = Date.now()
+
+    // Search social media platforms
+    const rawResults = mockSocialMediaSearch(keywords, platforms)
+
+    // Analyze intent for each result
+    const analyzedResults = rawResults.map((post) => {
+      const analysis = analyzeIntent(post.content, keywords)
+      return {
+        ...post,
+        ...analysis,
+        external_id: post.id,
+        metadata: {
+          platform_data: post,
+        },
       }
-
-      // Secondary sort: confidence
-      if (a.confidence !== b.confidence) {
-        return b.confidence - a.confidence
-      }
-
-      // Tertiary sort: engagement score
-      return (b.engagement_score || 0) - (a.engagement_score || 0)
     })
 
-    const limitedLeads = sortedLeads.slice(0, limit)
+    const searchDuration = Date.now() - startTime
 
-    // Save search to database
-    const { error: insertError } = await supabase.from("lead_searches").insert([
-      {
+    // Count results by intent score
+    const highIntentCount = analyzedResults.filter((r) => r.intent_score === "HIGH").length
+    const mediumIntentCount = analyzedResults.filter((r) => r.intent_score === "MEDIUM").length
+    const lowIntentCount = analyzedResults.filter((r) => r.intent_score === "LOW").length
+
+    // Save search record
+    const { data: searchRecord } = await supabase
+      .from("lead_searches")
+      .insert({
         user_id: user.id,
         keywords,
         platforms,
-        results_count: limitedLeads.length,
-        high_intent_count: limitedLeads.filter((l) => l.intentScore === "HIGH").length,
-        medium_intent_count: limitedLeads.filter((l) => l.intentScore === "MEDIUM").length,
-        low_intent_count: limitedLeads.filter((l) => l.intentScore === "LOW").length,
-      },
-    ])
+        results_count: analyzedResults.length,
+        high_intent_count: highIntentCount,
+        medium_intent_count: mediumIntentCount,
+        low_intent_count: lowIntentCount,
+        search_duration_ms: searchDuration,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
 
-    if (insertError) {
-      console.error("Error saving search:", insertError)
+    // Auto-save high intent leads if enabled
+    const { data: settings } = await supabase
+      .from("user_settings")
+      .select("auto_save_high_intent")
+      .eq("user_id", user.id)
+      .single()
+
+    if (settings?.auto_save_high_intent) {
+      const highIntentLeads = analyzedResults.filter((r) => r.intent_score === "HIGH")
+
+      for (const lead of highIntentLeads) {
+        await supabase.from("saved_leads").upsert(
+          {
+            user_id: user.id,
+            platform: lead.platform,
+            external_id: lead.external_id,
+            content: lead.content,
+            author: lead.author,
+            url: lead.url,
+            intent_score: lead.intent_score,
+            confidence: lead.confidence,
+            keywords: lead.keywords,
+            signals: lead.signals,
+            metadata: lead.metadata,
+            is_contacted: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          {
+            onConflict: "user_id,external_id",
+          },
+        )
+      }
     }
 
-    console.log(`✅ Found ${limitedLeads.length} leads for user ${user.id}`)
-
     return NextResponse.json({
-      leads: limitedLeads,
-      total: limitedLeads.length,
-      keywords,
-      platforms,
-      stats: {
-        high: limitedLeads.filter((l) => l.intentScore === "HIGH").length,
-        medium: limitedLeads.filter((l) => l.intentScore === "MEDIUM").length,
-        low: limitedLeads.filter((l) => l.intentScore === "LOW").length,
+      success: true,
+      search_id: searchRecord?.id,
+      results: analyzedResults,
+      summary: {
+        total: analyzedResults.length,
+        high_intent: highIntentCount,
+        medium_intent: mediumIntentCount,
+        low_intent: lowIntentCount,
+        search_duration_ms: searchDuration,
       },
-      timestamp: new Date().toISOString(),
     })
-  } catch (error: any) {
-    console.error("❌ Error fetching leads:", error)
+  } catch (error) {
+    console.error("Lead search error:", error)
     return NextResponse.json(
       {
-        error: "Failed to fetch leads",
-        details: error.message,
+        error: "Internal server error",
       },
       { status: 500 },
     )
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const headersList = headers()
+    const authorization = headersList.get("authorization")
 
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const supabase = createServerClient()
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser(authorization.replace("Bearer ", ""))
+
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const body = await request.json()
-    const { lead_id, action, notes } = body
+    const url = new URL(request.url)
+    const limit = Number.parseInt(url.searchParams.get("limit") || "10")
+    const offset = Number.parseInt(url.searchParams.get("offset") || "0")
 
-    if (!lead_id || !action) {
-      return NextResponse.json({ error: "lead_id and action are required" }, { status: 400 })
+    const { data: searches, error } = await supabase
+      .from("lead_searches")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1)
+
+    if (error) {
+      throw error
     }
 
-    console.log(`📝 User ${user.id} performing action: ${action} on lead: ${lead_id}`)
-
-    if (action === "save") {
-      // Save lead to user's saved leads
-      const { error } = await supabase.from("saved_leads").upsert([
-        {
-          user_id: user.id,
-          external_id: lead_id,
-          notes: notes || null,
-          is_contacted: false,
-        },
-      ])
-
-      if (error) {
-        console.error("Error saving lead:", error)
-        throw error
-      }
-
-      return NextResponse.json({ message: "Lead saved successfully" })
-    }
-
-    if (action === "contact") {
-      // Mark lead as contacted
-      const { error } = await supabase
-        .from("saved_leads")
-        .update({ is_contacted: true, contacted_at: new Date().toISOString() })
-        .eq("user_id", user.id)
-        .eq("external_id", lead_id)
-
-      if (error) {
-        console.error("Error updating lead:", error)
-        throw error
-      }
-
-      return NextResponse.json({ message: "Lead marked as contacted" })
-    }
-
-    return NextResponse.json({ error: "Invalid action" }, { status: 400 })
-  } catch (error: any) {
-    console.error("❌ Error in lead action:", error)
+    return NextResponse.json({
+      success: true,
+      searches: searches || [],
+    })
+  } catch (error) {
+    console.error("Get searches error:", error)
     return NextResponse.json(
       {
-        error: "Failed to process lead action",
-        details: error.message,
+        error: "Internal server error",
       },
       { status: 500 },
     )
