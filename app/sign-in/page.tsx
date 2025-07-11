@@ -90,7 +90,7 @@ export default function SignInPage() {
     setIsLoading(true)
     try {
       console.log("🎭 Demo login attempt")
-      await signIn("demo@shadowstack.com", "demo12345")
+      await signIn("demo@intentiq.com", "demo12345")
 
       toast({
         title: "Welcome to the demo!",
@@ -114,8 +114,8 @@ export default function SignInPage() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="flex items-center space-x-2">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+        <div className="flex items-center space-x-2 text-white">
           <Loader2 className="h-4 w-4 animate-spin" />
           <span>Loading...</span>
         </div>
@@ -124,20 +124,22 @@ export default function SignInPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       <Navbar />
 
       <div className="flex-1 flex items-center justify-center pt-16 px-4">
-        <Card className="w-full max-w-md">
+        <Card className="w-full max-w-md bg-white/10 border-white/20">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl font-bold">Sign in</CardTitle>
-            <CardDescription>Enter your email and password to access your account</CardDescription>
+            <CardTitle className="text-2xl font-bold text-white">Sign in</CardTitle>
+            <CardDescription className="text-gray-300">
+              Enter your email and password to access your account
+            </CardDescription>
           </CardHeader>
 
           {message && (
             <div className="px-6">
               <Alert>
-                <AlertDescription>{message}</AlertDescription>
+                <AlertDescription className="text-white">{message}</AlertDescription>
               </Alert>
             </div>
           )}
@@ -145,21 +147,26 @@ export default function SignInPage() {
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email" className="text-white">
+                  Email
+                </Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="demo@shadowstack.com"
+                  placeholder="demo@intentiq.com"
                   onChange={handleChange}
                   value={formData.email}
                   required
                   disabled={isLoading}
+                  className="bg-white/10 border-white/20 text-white placeholder-gray-400"
                 />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
-                  <Link href="#" className="text-sm text-primary hover:underline">
+                  <Label htmlFor="password" className="text-white">
+                    Password
+                  </Label>
+                  <Link href="#" className="text-sm text-purple-300 hover:underline">
                     Forgot password?
                   </Link>
                 </div>
@@ -171,11 +178,16 @@ export default function SignInPage() {
                   value={formData.password}
                   required
                   disabled={isLoading}
+                  className="bg-white/10 border-white/20 text-white placeholder-gray-400"
                 />
               </div>
             </CardContent>
             <CardFooter className="flex flex-col">
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button
+                type="submit"
+                className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                disabled={isLoading}
+              >
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -192,7 +204,7 @@ export default function SignInPage() {
                   type="button"
                   onClick={handleDemoLogin}
                   disabled={isLoading}
-                  className="w-full"
+                  className="w-full border-white/20 text-white hover:bg-white/10 bg-transparent"
                 >
                   {isLoading ? (
                     <>
@@ -205,9 +217,9 @@ export default function SignInPage() {
                 </Button>
               </div>
 
-              <p className="mt-4 text-center text-sm text-muted-foreground">
+              <p className="mt-4 text-center text-sm text-gray-300">
                 Don't have an account?{" "}
-                <Link href="/sign-up" className="text-primary hover:underline">
+                <Link href="/sign-up" className="text-purple-300 hover:underline">
                   Sign up
                 </Link>
               </p>

@@ -59,29 +59,36 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       <Navbar />
 
       <div className="flex-1 flex items-center justify-center pt-16 px-4">
-        <Card className="w-full max-w-md">
+        <Card className="w-full max-w-md bg-white/10 border-white/20">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl font-bold">Create an account</CardTitle>
-            <CardDescription>Enter your information to get started with ShadowStack</CardDescription>
+            <CardTitle className="text-2xl font-bold text-white">Create an account</CardTitle>
+            <CardDescription className="text-gray-300">
+              Enter your information to get started with IntentIQ
+            </CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="fullName">Full Name</Label>
+                <Label htmlFor="fullName" className="text-white">
+                  Full Name
+                </Label>
                 <Input
                   id="fullName"
                   placeholder="John Doe"
                   onChange={handleChange}
                   value={formData.fullName}
                   required
+                  className="bg-white/10 border-white/20 text-white placeholder-gray-400"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email" className="text-white">
+                  Email
+                </Label>
                 <Input
                   id="email"
                   type="email"
@@ -89,10 +96,13 @@ export default function SignUpPage() {
                   onChange={handleChange}
                   value={formData.email}
                   required
+                  className="bg-white/10 border-white/20 text-white placeholder-gray-400"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password" className="text-white">
+                  Password
+                </Label>
                 <Input
                   id="password"
                   type="password"
@@ -100,20 +110,33 @@ export default function SignUpPage() {
                   onChange={handleChange}
                   value={formData.password}
                   required
+                  className="bg-white/10 border-white/20 text-white placeholder-gray-400"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="company">Company (Optional)</Label>
-                <Input id="company" placeholder="Your Company" onChange={handleChange} value={formData.company} />
+                <Label htmlFor="company" className="text-white">
+                  Company (Optional)
+                </Label>
+                <Input
+                  id="company"
+                  placeholder="Your Company"
+                  onChange={handleChange}
+                  value={formData.company}
+                  className="bg-white/10 border-white/20 text-white placeholder-gray-400"
+                />
               </div>
             </CardContent>
             <CardFooter className="flex flex-col">
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button
+                type="submit"
+                className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                disabled={isLoading}
+              >
                 {isLoading ? "Creating account..." : "Create account"}
               </Button>
-              <p className="mt-4 text-center text-sm text-muted-foreground">
+              <p className="mt-4 text-center text-sm text-gray-300">
                 Already have an account?{" "}
-                <Link href="/sign-in" className="text-primary hover:underline">
+                <Link href="/sign-in" className="text-purple-300 hover:underline">
                   Sign in
                 </Link>
               </p>

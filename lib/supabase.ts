@@ -2,9 +2,11 @@ import { createClient } from "@supabase/supabase-js"
 
 // Environment variables with fallbacks
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://ufmysxronjaohovgoecc.supabase.co"
-const supabaseAnonKey =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVmbXlzeHJvbmphb2hvdmdvZWNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTgzMDI0NzcsImV4cCI6MjAzMzg3ODQ3N30.Nh-hJRYGnQgxvdUEWwNgJN-kxTKyZXP5aQvmRsF-8QE"
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error("Missing Supabase environment variables")
+}
 
 console.log("🔧 Supabase URL:", supabaseUrl)
 console.log("🔧 Supabase Anon Key:", supabaseAnonKey ? "✅ Present" : "❌ Missing")
@@ -51,51 +53,91 @@ export interface UserProfile {
   email: string
   full_name?: string
   company_name?: string
-  subscription_tier: "none" | "basic" | "pro" | "enterprise"
+  subscription_tier: "free" | "starter" | "pro" | "enterprise"
   subscription_status: "active" | "inactive" | "past_due" | "canceled"
   subscription_id?: string
   current_period_end?: string
-  role?: "user" | "admin"
-  permissions?: string[]
+  trial_ends_at?: string
   created_at: string
+  updated_at: string
 }
 
-export interface MonitoringTarget {
+export interface UserKeyword {
   id: string
   user_id: string
-  target_type: "wallet" | "domain" | "email" | "api"
-  target_value: string
-  target_name?: string
-  target_description?: string
+  keyword: string
+  category: string
   is_active: boolean
   created_at: string
+  updated_at: string
 }
 
-export interface Alert {
+export interface LeadSearch {
   id: string
   user_id: string
-  target_id: string
-  severity: "critical" | "high" | "medium" | "low"
-  source_channel: string
-  message_text: string
-  is_read: boolean
-  is_blocked: boolean
+  keywords: string[]
+  platforms: string[]
+  results_count: number
+  high_intent_count: number
+  medium_intent_count: number
+  low_intent_count: number
+  search_duration_ms?: number
   created_at: string
 }
 
-export interface UserIntegration {
+export interface SavedLead {
   id: string
   user_id: string
-  integration_type: string
-  config: Record<string, any>
+  platform: string
+  external_id: string
+  content: string
+  author?: string
+  url?: string
+  intent_score: "HIGH" | "MEDIUM" | "LOW"
+  confidence?: number
+  keywords?: string[]
+  signals?: string[]
+  metadata?: Record<string, any>
+  is_contacted: boolean
+  contacted_at?: string
+  notes?: string
+  tags?: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface UserSettings {
+  id: string
+  user_id: string
+  email_notifications: boolean
+  slack_webhook_url?: string
+  monitoring_frequency: number
+  max_leads_per_search: number
+  platforms: string[]
+  min_intent_score: "HIGH" | "MEDIUM" | "LOW"
+  auto_save_high_intent: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface MonitoringJob {
+  id: string
+  user_id: string
+  keywords: string[]
+  platforms: string[]
   is_active: boolean
+  last_run_at?: string
+  next_run_at?: string
+  frequency_minutes: number
   created_at: string
+  updated_at: string
 }
 
-export interface NotificationPreferences {
-  user_id: string
-  email_alerts: boolean
-  min_severity_for_email: "critical" | "high" | "medium" | "low"
-  webhook_alerts: boolean
-  created_at: string
+export interface SubscriptionLimits {
+  tier: string
+  max_keywords: number
+  max_searches_per_day: number
+  max_saved_leads: number
+  api_rate_limit: number
+  features: string[]
 }

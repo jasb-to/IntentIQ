@@ -67,6 +67,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (event === "SIGNED_IN" && session?.user) {
         console.log("✅ User signed in:", session.user.email)
         await ensureUserProfile(session.user)
+
+        // Send welcome email for new users
+        if (event === "SIGNED_UP") {
+          try {
+            await fetch("/api/notifications", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                type: "welcome",
+                data: {},
+              }),
+            })
+          } catch (error) {
+            console.error("Failed to send welcome email:", error)
+          }
+        }
       }
 
       if (event === "SIGNED_OUT") {
@@ -95,12 +111,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log("📝 Creating user profile...")
         const { error: insertError } = await supabase.from("user_profiles").insert({
           id: user.id,
-          email: user.email,
+          email: user.email!,
           full_name: user.user_metadata?.full_name || null,
           company_name: user.user_metadata?.company_name || null,
-          subscription_tier: "none",
-          subscription_status: "inactive",
-          role: "user",
+          subscription_tier: "free",
+          subscription_status: "active",
+          trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // 14-day trial
         })
 
         if (insertError) {
